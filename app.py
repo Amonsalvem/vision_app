@@ -1,130 +1,65 @@
-# app.py
+#import os
 import os
 import base64
-import numpy as np
 import streamlit as st
-from PIL import Image
 from openai import OpenAI
 
-# =========================
-#   ESTILO: NEGRO / BLANCO
-# =========================
+# ---------- Util ----------
+def encode_image(image_file):
+    return base64.b64encode(image_file.getvalue()).decode("utf-8")
+
 st.set_page_config(page_title="Análisis de imagen", layout="centered", initial_sidebar_state="collapsed")
 st.markdown("""
-<style>
-/* Fondo negro global */
-.stApp, .main, .block-container { background: #000000 !important; }
-
-/* Tipografía base en blanco */
-body, .stMarkdown, .stTextInput, .stButton, .stAlert, .stFileUploader, .st-expander, .stRadio, .stCheckbox, .stSelectbox, .stTextArea {
-  color: #FFFFFF !important;
-}
-
-/* Títulos */
-h1, h2, h3, h4, h5, h6 { color: #FFFFFF !important; }
-
-/* Inputs y cajas con borde gris */
-div[data-baseweb="input"], textarea, .stTextInput, .stTextArea, .stTextArea textarea, .stFileUploader, .stTextInput input {
-  background: #0c0c0c !important;
-  color: #FFFFFF !important;
-  border: 1px solid #2a2a2a !important;
-  border-radius: 10px !important;
-}
-
-/* Uploader */
-.stFileUploader div[data-testid="stFileUploaderDropzone"] {
-  background: #0c0c0c !important;
-  border: 1px dashed #2a2a2a !important;
-}
-
-/* Expander */
-.streamlit-expanderHeader, .st-expanderHeader {
-  background: #0c0c0c !important;
-  color: #FFFFFF !important;
-  border: 1px solid #2a2a2a !important;
-  border-radius: 10px !important;
-}
-
-/* Botones: blanco sobre negro */
-.stButton > button {
-  background: #FFFFFF !important;
-  color: #000000 !important;
-  border-radius: 999px !important;
-  border: none !important;
-  font-weight: 600 !important;
-}
-.stButton > button:hover { opacity: 0.9 !important; }
-
-/* Toggles / checkbox */
-label, .stCheckbox label, .stToggle label { color: #FFFFFF !important; }
-
-/* Alerts */
-.stAlert { background: #111111 !important; border: 1px solid #2a2a2a !important; }
-
-/* Tablas y markdown */
-table, th, td { color: #FFFFFF !important; background: #000000 !important; border-color:#2a2a2a !important; }
-code, pre { background:#0c0c0c !important; color:#fff !important; }
-</style>
+    <style>
+      .stApp {background: #000;}
+      .stMarkdown, .stTextInput, .stFileUploader, .stExpander, .stButton, .stToggle, .stAlert, .stCaption, .stTextArea {color: #fff;}
+      .stTextInput > div > div input, textarea {background:#111 !important; color:#fff !important; border:1px solid #333;}
+      .stFileUploader > div {background:#111 !important; border:1px dashed #333;}
+      .stButton button {background:#111 !important; color:#fff !important; border:1px solid #333;}
+    </style>
 """, unsafe_allow_html=True)
 
-# ==============
-#   UTILIDAD
-# ==============
-def encode_image(file):
-    return base64.b64encode(file.getvalue()).decode("utf-8")
+st.title("Análisis de Imagen:🤖🏞️")
 
-# =========================
-#   CABECERA / API KEY
-# =========================
-st.title("Análisis de Imagen: 🤖🏞️")
+# 1) Tomamos key desde secrets o entorno
+key_from_secrets = st.secrets.get("OPENAI_API_KEY", "") if hasattr(st, "secrets") else ""
+key_from_env = os.getenv("OPENAI_API_KEY", "")
+api_key = key_from_secrets or key_from_env
 
-# 1) Primero intenta leer de secrets (recomendado en Streamlit Cloud)
-api_key = st.secrets.get("OPENAI_API_KEY") if hasattr(st, "secrets") else None
-
-# 2) Si no existe secret, permite que el usuario la ingrese (oculta)
+# 2) Si no hay key, permitimos ingresarla (oculta)
 if not api_key:
-    api_key = st.text_input("Ingresa tu API key (OpenAI)", type="password", help="Guárdala en Manage app → Settings → Secrets como OPENAI_API_KEY para no escribirla cada vez.")
+    api_key = st.text_input("Ingresa tu API key", type="password", help="Se recomienda usar Secrets para no escribirla cada vez.")
 
-if api_key:
-    os.environ["OPENAI_API_KEY"] = api_key
+# 3) Si después de todo no hay key, avisamos (no rompemos la app)
+if not api_key:
+    st.info("Por favor agrega tu API key en *Secrets* o escríbela arriba para continuar.")
+    st.stop()
 
-# =========================
-#   CARGA DE IMAGEN
-# =========================
-uploaded_file = st.file_uploader("Sube una imagen (JPG, PNG, JPEG)", type=["jpg", "jpeg", "png"])
+# 4) Inicializamos cliente
+client = OpenAI(api_key=api_key)
 
+# 5) Subida de imagen
+uploaded_file = st.file_uploader("Sube una imagen (JPG/PNG/JPEG)", type=["jpg", "jpeg", "png"])
 if uploaded_file:
-    with st.expander("Vista de la imagen", expanded=True):
-        # ⚠️ sin use_container_width para evitar error en tu runtime
-        st.image(uploaded_file, caption=uploaded_file.name)
+    with st.expander("Imagen", expanded=True):
+        st.image(uploaded_file, caption=uploaded_file.name, use_container_width=True)
 
-# =========================
-#   CONTEXTO OPCIONAL
-# =========================
+# 6) Opcional: pregunta adicional
 show_details = st.toggle("Pregunta algo específico sobre la imagen", value=False)
 additional_details = ""
 if show_details:
-    additional_details = st.text_area("Añade contexto sobre la imagen aquí:")
+    additional_details = st.text_area("Añade contexto de la imagen aquí:")
 
-# =========================
-#   BOTÓN DE ANÁLISIS
-# =========================
-analyze = st.button("Analiza la imagen")
-
-# =========================
-#   INFERENCIA
-# =========================
-if analyze:
-    if not api_key:
-        st.warning("Por favor ingresa tu API key.")
-    elif not uploaded_file:
+# 7) Acción
+if st.button("Analiza la imagen", type="secondary"):
+    if not uploaded_file:
         st.warning("Por favor sube una imagen.")
-    else:
-        try:
-            client = OpenAI(api_key=api_key)
+        st.stop()
 
-            base64_image = encode_image(uploaded_file)
-            prompt_text = "Describe detalladamente lo que ves en la imagen en español."
+    with st.spinner("Analizando ..."):
+        try:
+            b64 = encode_image(uploaded_file)
+            prompt_text = "Describe lo que ves en la imagen en español."
             if show_details and additional_details.strip():
                 prompt_text += f"\n\nContexto adicional del usuario:\n{additional_details.strip()}"
 
@@ -132,38 +67,28 @@ if analyze:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": prompt_text},
-                    {"type": "image_url",
-                     "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                 ],
             }]
 
-            full_response = ""
+            # Streaming de respuesta
+            full = ""
             placeholder = st.empty()
-            with st.spinner("Analizando…"):
-                for chunk in client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=messages,
-                    max_tokens=1200,
-                    stream=True,
-                ):
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        full_response += delta
-                        # Mostrar texto blanco sobre negro
-                        placeholder.markdown(f"<div style='color:#fff;'>{full_response}▌</div>", unsafe_allow_html=True)
-
-            placeholder.markdown(f"<div style='color:#fff;'>{full_response}</div>", unsafe_allow_html=True)
+            for chunk in client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=1200,
+                stream=True
+            ):
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    full += delta
+                    placeholder.markdown(full + "▌")
+            placeholder.markdown(full)
 
         except Exception as e:
-            st.error(f"Ocurrió un error: {e}")
-
-# =========================
-#   AYUDA (opcional)
-# =========================
-with st.expander("¿Dónde pongo mi API key de forma segura?", expanded=False):
-    st.markdown(
-        "- En **Streamlit Cloud**: ve a **Manage app → Settings → Secrets** y crea `OPENAI_API_KEY = \"sk-...\"`. "
-        "Después dale **Rerun** a la app.\n"
-        "- Local: crea `.streamlit/secrets.toml` con:\n\n"
-        "```toml\n[default]\nOPENAI_API_KEY = \"sk-xxxx\"\n```"
-    )
+            msg = str(e)
+            if "invalid_api_key" in msg or "Incorrect API key" in msg or "401" in msg:
+                st.error("Tu API key no es válida o no tiene permisos. Verifícala, regenera una nueva y colócala en *Secrets* o en el campo de arriba.")
+            else:
+                st.error(f"Ocurrió un error: {e}")
