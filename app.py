@@ -79,4 +79,59 @@ if st.button("🔍 Probar clave"):
             st.error("La API Key es inválida o no corresponde al proyecto/organización. "
                      "Verifícala, regenera una nueva y guárdala en *Secrets*.")
         elif "organization" in msg.lower() or "project" in msg.lower() or "permission" in msg.lower() or "403" in msg:
-            st.error("La clave existe pero no tiene permisos para el modelo/organiza
+            st.error("La clave existe pero no tiene permisos para el modelo/organización/proyecto configurado. "
+                     "Revisa OPENAI_ORG_ID / OPENAI_PROJECT y que el modelo esté habilitado.")
+        else:
+            st.error(f"Error al validar la clave: {msg}")
+
+# 5) Subida de imagen
+uploaded_file = st.file_uploader("Sube una imagen (JPG/PNG/JPEG)", type=["jpg", "jpeg", "png"])
+if uploaded_file:
+    with st.expander("Imagen", expanded=True):
+        st.image(uploaded_file, caption=uploaded_file.name, use_container_width=True)
+
+# 6) Pregunta adicional
+ask_more = st.toggle("Pregunta algo específico sobre la imagen", value=False)
+extra = st.text_area("Añade contexto de la imagen aquí:", disabled=not ask_more) if ask_more else ""
+
+# 7) Análisis
+if st.button("Analiza la imagen", type="secondary"):
+    if not uploaded_file:
+        st.warning("Por favor sube una imagen.")
+        st.stop()
+    with st.spinner("Analizando ..."):
+        try:
+            b64 = encode_image(uploaded_file)
+            prompt = "Describe lo que ves en la imagen en español."
+            if ask_more and extra.strip():
+                prompt += f"\n\nContexto adicional del usuario:\n{extra.strip()}"
+
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}" }},
+                ],
+            }]
+
+            full, box = "", st.empty()
+            for chunk in client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=1200,
+                stream=True,
+            ):
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    full += delta
+                    box.markdown(full + "▌")
+            box.markdown(full)
+
+        except Exception as e:
+            msg = str(e)
+            if "invalid_api_key" in msg or "Incorrect API key" in msg or "401" in msg:
+                st.error("Tu API Key no es válida o no tiene permisos. Revisa *Secrets* o vuelve a ingresarla.")
+            elif "insufficient_quota" in msg or "billing" in msg.lower():
+                st.error("No hay cuota o el billing no está activo en esa cuenta/proyecto.")
+            else:
+                st.error(f"Ocurrió un error: {msg}")
