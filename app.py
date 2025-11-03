@@ -1,23 +1,27 @@
+import os
 import streamlit as st
+import base64
 from openai import OpenAI
 
-# --- API key solo desde Secrets o input local oculto ---
-api_key = st.secrets.get("OPENAI_API_KEY", "")
+st.set_page_config(page_title="Analisis de imagen", layout="centered", initial_sidebar_state="collapsed")
+st.title("Análisis de Imagen:🤖🏞️")
 
-# (Opcional) permitir pegar temporalmente una key durante pruebas
-ke = st.text_input("Ingresa tu Clave (recomendado usar Secrets)", type="password")
-if ke.strip():
-    api_key = ke.strip()
+# 1) Clave: primero Secrets, luego variable de entorno; opcionalmente input solo si no hay nada
+API_KEY = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+if not API_KEY:
+    ke = st.text_input("Ingresa tu Clave (recomendado usar Secrets)", type="password")
+    if ke:
+        API_KEY = ke
 
-if not api_key:
-    st.warning("Por favor ingresa tu API key en Secrets o en el campo de arriba.")
+if not API_KEY:
+    st.error("Tu API key no es válida o no tiene permisos. Revisa Billing/Projects o vuelve a pegarla.")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=API_KEY)
 
-# (Opcional) verificación rápida
+# 2) Ping de diagnóstico: muestra el error real si falla la auth/billing
 try:
-    client.models.list()
-except Exception:
-    st.error("Tu API key no es válida o no tiene permisos. Revisa Billing/Projects o vuelve a pegarla.")
+    _ = client.models.list()
+except Exception as e:
+    st.error(f"No pude autenticar con OpenAI. Detalle: {e}")
     st.stop()
